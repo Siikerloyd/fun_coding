@@ -6,9 +6,6 @@ A small always-on-top desktop focus timer. Set a duration, stay on the clock, an
   <img src="build/icon.png" alt="Momentum icon" width="96" height="96" />
 </p>
 
-<p align="center">
-  <img src="docs/preview.png" alt="Momentum timer window: circular orange progress ring, 00:25:00, Focusing status, neo-brutalist controls" width="560" />
-</p>
 
 Built with Electron, React, and Tailwind. Frameless compact window, custom orange **M** mark, hard black/white/orange UI.
 
