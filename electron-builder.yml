@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: timer-app
+appId: com.momentum.app
+productName: Momentum
 directories:
   buildResources: build
 files:
@@ -11,7 +11,7 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: timer-app
+  executableName: Momentum
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

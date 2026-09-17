@@ -1,23 +1,46 @@
-import { app, shell, BrowserWindow, ipcMain, Menu, dialog } from 'electron'
-import { basename, extname, join } from 'path'
+import { app, shell, BrowserWindow, ipcMain, Menu, dialog, protocol, net } from 'electron'
+import { basename, join } from 'path'
 import { readFile, stat, unlink, writeFile } from 'fs/promises'
+import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
 const ALARM_AUDIO_CONFIG = 'alarm-audio.json'
 const MAX_ALARM_AUDIO_BYTES = 25 * 1024 * 1024
-const AUDIO_MIME_TYPES = {
-  '.aac': 'audio/aac',
-  '.flac': 'audio/flac',
-  '.m4a': 'audio/mp4',
-  '.mp3': 'audio/mpeg',
-  '.oga': 'audio/ogg',
-  '.ogg': 'audio/ogg',
-  '.wav': 'audio/wav',
-  '.webm': 'audio/webm'
-}
+const ALARM_PROTOCOL_URL = 'momentum://alarm'
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'momentum',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+      bypassCSP: true
+    }
+  }
+])
 
 const getAlarmAudioConfigPath = () => join(app.getPath('userData'), ALARM_AUDIO_CONFIG)
+
+const readSavedAlarmPath = async () => {
+  const rawConfig = await readFile(getAlarmAudioConfigPath(), 'utf8')
+  const config = JSON.parse(rawConfig)
+  if (!config?.filePath) return null
+
+  const fileStats = await stat(config.filePath)
+  if (fileStats.size > MAX_ALARM_AUDIO_BYTES) {
+    throw new Error('Alarm audio files must be 25 MB or smaller.')
+  }
+
+  return {
+    filePath: config.filePath,
+    fileName: config.fileName || basename(config.filePath),
+    version: fileStats.mtimeMs
+  }
+}
 
 const createAudioPayload = async (filePath) => {
   const fileStats = await stat(filePath)
@@ -25,25 +48,20 @@ const createAudioPayload = async (filePath) => {
     throw new Error('Alarm audio files must be 25 MB or smaller.')
   }
 
-  const mimeType = AUDIO_MIME_TYPES[extname(filePath).toLowerCase()] || 'audio/octet-stream'
-  const fileData = await readFile(filePath)
-
   return {
     fileName: basename(filePath),
-    audioUrl: `data:${mimeType};base64,${fileData.toString('base64')}`
+    audioUrl: `${ALARM_PROTOCOL_URL}?v=${fileStats.mtimeMs}`
   }
 }
 
 const readAlarmAudioConfig = async () => {
   try {
-    const rawConfig = await readFile(getAlarmAudioConfigPath(), 'utf8')
-    const config = JSON.parse(rawConfig)
-    if (!config?.filePath) return null
+    const saved = await readSavedAlarmPath()
+    if (!saved) return null
 
-    const audio = await createAudioPayload(config.filePath)
     return {
-      fileName: config.fileName || audio.fileName,
-      audioUrl: audio.audioUrl
+      fileName: saved.fileName,
+      audioUrl: `${ALARM_PROTOCOL_URL}?v=${saved.version}`
     }
   } catch (error) {
     if (error.code !== 'ENOENT') {
@@ -80,11 +98,12 @@ function createWindow() {
     transparent: false,
     backgroundColor: '#000000',
     hasShadow: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
+    icon,
+    title: 'Momentum',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
-      backgroundThrottling: false
+      backgroundThrottling: true
     }
   })
   mainWindow.removeMenu()
@@ -93,6 +112,10 @@ function createWindow() {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+  })
+
+  mainWindow.on('closed', () => {
+    mainWindow = null
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -131,13 +154,25 @@ if (!gotTheLock) {
   // Some APIs can only be used after this event occurs.
   app.whenReady().then(() => {
     // Set app user model id for windows
-    electronApp.setAppUserModelId('com.electron')
+    electronApp.setAppUserModelId('com.momentum.app')
 
     // Default open or close DevTools by F12 in development
     // and ignore CommandOrControl + R in production.
     // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
     app.on('browser-window-created', (_, window) => {
       optimizer.watchWindowShortcuts(window)
+    })
+
+    protocol.handle('momentum', async () => {
+      try {
+        const saved = await readSavedAlarmPath()
+        if (!saved?.filePath) {
+          return new Response('Not found', { status: 404 })
+        }
+        return net.fetch(pathToFileURL(saved.filePath).href)
+      } catch {
+        return new Response('Not found', { status: 404 })
+      }
     })
 
     ipcMain.handle('get-alarm-audio', async () => readAlarmAudioConfig())
@@ -201,6 +236,12 @@ if (!gotTheLock) {
         return newState
       }
       return true
+    })
+
+    ipcMain.on('set-background-throttling', (_event, shouldThrottle) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.setBackgroundThrottling(Boolean(shouldThrottle))
+      }
     })
 
     createWindow()

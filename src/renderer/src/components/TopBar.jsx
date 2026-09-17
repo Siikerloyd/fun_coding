@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Timer as TimerIcon, Minus, X, Pin, PinOff } from 'lucide-react'
+import { Minus, X, Pin, PinOff } from 'lucide-react'
+import logo from '../assets/logo.svg'
 
 function TopBar({ isActive, isAlarm }) {
   const [isPinned, setIsPinned] = useState(true)
@@ -33,13 +34,11 @@ function TopBar({ isActive, isAlarm }) {
       {/* Brand & Status */}
       <div className="flex items-center gap-2">
         <div className="relative flex items-center justify-center">
-          <TimerIcon
+          <img
+            src={logo}
+            alt=""
             className={`w-3.5 h-3.5 transition-all duration-300 ${
-              isAlarm
-                ? 'text-rose-400 animate-bounce drop-shadow-[0_0_8px_rgba(244,114,114,0.5)]'
-                : isActive
-                  ? 'text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,127,0.5)]'
-                  : 'text-zinc-500'
+              isAlarm ? 'animate-bounce' : ''
             }`}
           />
           {isActive && (
@@ -47,7 +46,7 @@ function TopBar({ isActive, isAlarm }) {
           )}
         </div>
         <span className="text-[11px] font-semibold tracking-wider text-zinc-400 uppercase">
-          Focus Timer
+          Momentum
         </span>
       </div>
 

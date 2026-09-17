@@ -5,7 +5,9 @@ import { electronAPI } from '@electron-toolkit/preload'
 const api = {
   chooseAlarmAudio: () => ipcRenderer.invoke('choose-alarm-audio'),
   getAlarmAudio: () => ipcRenderer.invoke('get-alarm-audio'),
-  resetAlarmAudio: () => ipcRenderer.invoke('reset-alarm-audio')
+  resetAlarmAudio: () => ipcRenderer.invoke('reset-alarm-audio'),
+  setBackgroundThrottling: (shouldThrottle) =>
+    ipcRenderer.send('set-background-throttling', shouldThrottle)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

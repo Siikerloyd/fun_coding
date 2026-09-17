@@ -34,13 +34,19 @@ function Timer({ isActive, setIsActive, isAlarm, setIsAlarm }) {
   const previewAudioRef = useRef(null)
   const previewTimeoutRef = useRef(null)
   const beepIntervalRef = useRef(null)
+  const beepTimeoutRef = useRef(null)
+  const alarmFallbackTimeoutRef = useRef(null)
+  const audioCtxRef = useRef(null)
 
   // Helper to play a short test/preview tone
   const playTone = (freq = 880, duration = 0.2) => {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext
       if (!AudioCtx) return
-      const ctx = new AudioCtx()
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+        audioCtxRef.current = new AudioCtx()
+      }
+      const ctx = audioCtxRef.current
       if (ctx.state === 'suspended') {
         ctx.resume()
       }
@@ -52,6 +58,10 @@ function Timer({ isActive, setIsActive, isAlarm, setIsAlarm }) {
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration)
       osc.connect(gain)
       gain.connect(ctx.destination)
+      osc.onended = () => {
+        osc.disconnect()
+        gain.disconnect()
+      }
       osc.start()
       osc.stop(ctx.currentTime + duration)
     } catch {
@@ -82,7 +92,7 @@ function Timer({ isActive, setIsActive, isAlarm, setIsAlarm }) {
 
     const audio = new Audio(audioUrl)
     audio.loop = true
-    audio.preload = 'auto'
+    audio.preload = 'metadata'
     audioRef.current = audio
   }, [])
 
@@ -114,7 +124,7 @@ function Timer({ isActive, setIsActive, isAlarm, setIsAlarm }) {
     clearInterval(beepIntervalRef.current)
     beepIntervalRef.current = setInterval(() => {
       playTone(900, 0.25)
-      setTimeout(() => playTone(1200, 0.25), 180)
+      beepTimeoutRef.current = setTimeout(() => playTone(1200, 0.25), 180)
     }, 900)
   }, [])
 
@@ -122,6 +132,10 @@ function Timer({ isActive, setIsActive, isAlarm, setIsAlarm }) {
     if (beepIntervalRef.current) {
       clearInterval(beepIntervalRef.current)
       beepIntervalRef.current = null
+    }
+    if (beepTimeoutRef.current) {
+      clearTimeout(beepTimeoutRef.current)
+      beepTimeoutRef.current = null
     }
   }, [])
 
@@ -147,7 +161,11 @@ function Timer({ isActive, setIsActive, isAlarm, setIsAlarm }) {
     }
 
     // Safety fallback: if audioRef doesn't play within 500ms, start synth alarm
-    setTimeout(() => {
+    if (alarmFallbackTimeoutRef.current) {
+      clearTimeout(alarmFallbackTimeoutRef.current)
+    }
+    alarmFallbackTimeoutRef.current = setTimeout(() => {
+      alarmFallbackTimeoutRef.current = null
       if (!mp3Playing && audioRef.current?.paused) {
         startSynthesizedAlarm()
       }
@@ -155,6 +173,10 @@ function Timer({ isActive, setIsActive, isAlarm, setIsAlarm }) {
   }, [isMuted, startSynthesizedAlarm])
 
   const stopAlarmSound = useCallback(() => {
+    if (alarmFallbackTimeoutRef.current) {
+      clearTimeout(alarmFallbackTimeoutRef.current)
+      alarmFallbackTimeoutRef.current = null
+    }
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.currentTime = 0
@@ -193,8 +215,16 @@ function Timer({ isActive, setIsActive, isAlarm, setIsAlarm }) {
       isCurrent = false
       stopAlarmSound()
       stopPreviewSound()
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(() => {})
+      }
+      audioCtxRef.current = null
     }
   }, [initializeAlarmAudio, stopAlarmSound, stopPreviewSound])
+
+  useEffect(() => {
+    window.api?.setBackgroundThrottling?.(!(isActive || isAlarm))
+  }, [isActive, isAlarm])
 
   // Countdown interval
   useEffect(() => {
@@ -335,14 +365,13 @@ function Timer({ isActive, setIsActive, isAlarm, setIsAlarm }) {
       if (!result?.audioUrl) return
 
       const nextAudio = {
-        fileName: result.fileName || 'Custom alarm sound',
-        audioUrl: result.audioUrl
+        fileName: result.fileName || 'Custom alarm sound'
       }
 
       setAlarmAudio(nextAudio)
-      initializeAlarmAudio(nextAudio.audioUrl)
+      initializeAlarmAudio(result.audioUrl)
       stopAlarmSound()
-      previewAlarmSound(nextAudio.audioUrl)
+      previewAlarmSound(result.audioUrl)
     } catch (error) {
       console.warn('Could not choose alarm audio:', error)
       setAudioError('Could not choose an alarm sound.')
