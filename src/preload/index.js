@@ -1,8 +1,12 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
-const api = {}
+const api = {
+  chooseAlarmAudio: () => ipcRenderer.invoke('choose-alarm-audio'),
+  getAlarmAudio: () => ipcRenderer.invoke('get-alarm-audio'),
+  resetAlarmAudio: () => ipcRenderer.invoke('reset-alarm-audio')
+}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
